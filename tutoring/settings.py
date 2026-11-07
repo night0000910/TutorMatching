@@ -34,8 +34,18 @@ SECRET_KEY = env("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+#ドメインの許可
+ALLOWED_HOSTS = ['tutor-matching.com']
 
+#CSRF対策（Django 4.0以降でHTTPS化時に必須）
+CSRF_TRUSTED_ORIGINS = ['https://tutor-matching.com']
+
+#NginxからのHTTPSプロキシ判定を有効化
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+#CookieのHTTPS限定化（セキュリティ向上）
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
 
 # Application definition
 
