@@ -1,4 +1,4 @@
-Django>=4.0,<5.0
+Django>=3.2,<5.0
 django-environ
 psycopg2-binary
 djangorestframework
@@ -6,3 +6,6 @@ channels
 channels-redis
 daphne
 gunicorn
+python-dateutil
+Pillow
+whitenoise
