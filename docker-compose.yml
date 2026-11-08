@@ -54,6 +54,14 @@ services:
       - frontend-net # ◄ フロントエンドネットワークのみ
     depends_on:
       - app
+  # 4. Certbotコンテナ
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - certbot_etc:/etc/letsencrypt
+      - certbot_var:/var/www/certbot
+    # 自動更新用に常駐させる場合の指定例（12日ごとに renew を試行）
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12d; done;'"
 
 # データ永続化・共有ボリューム
 volumes:
