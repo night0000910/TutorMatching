@@ -1,363 +1,338 @@
-$(document).ready(function() {
-    var userId = document.getElementById("user-id");
+// グローバル変数・状態の管理
+let webSocket = null;
+let localStream = new MediaStream();
+let mapPeers = {};
+let currentUsername = "";
 
-    var request = new XMLHttpRequest();
+const rtcConfiguration = {
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+    ]
+};
+
+$(document).ready(function() {
+    const request = new XMLHttpRequest();
     request.open("GET", "/api/v1/users/authenticated_user/classes/current_class/");
     request.onload = communicateWithWebRTC;
     request.send();
-})
+});
 
-function communicateWithWebRTC(){
+async function communicateWithWebRTC() {
+    const response = JSON.parse(this.response);
+    const currentClass = response[0];
 
-    var response = JSON.parse(this.response);
-    var currentClass = response[0];
-    console.log(currentClass);
+    if (!currentClass) return;
 
-    if (currentClass != null){
-        mapPeers = {};
+    const usernameElement = document.getElementById("username");
+    currentUsername = usernameElement ? usernameElement.value : "";
 
-        var usernameElement = document.getElementById("username");
-        var username = usernameElement.value;
-        console.log("ユーザー名 : ", username);
+    const userIdElement = document.getElementById("user-id");
+    const userId = userIdElement ? userIdElement.value : "";
+    const classId = currentClass.id;
 
-        var userIdElement = document.getElementById("user-id");
-        var userId = userIdElement.value;
+    // 1. まずカメラ・マイクのストリームを取得する (必須)
+    const constraints = { video: true, audio: true };
+    const localVideo = document.querySelector("#local-video");
+    const btnToggleVideo = document.querySelector("#btn-toggle-video");
+    const btnToggleAudio = document.querySelector("#btn-toggle-audio");
 
-        var classId = currentClass.id;
-
-        var loc = window.location;
-        var wsStart = "ws://";
-
-        if(loc.protocol == "https:"){
-            wsStart = "wss://";
+    try {
+        localStream = await navigator.mediaDevices.getUserMedia(constraints);
+        if (localVideo) {
+            localVideo.srcObject = localStream;
+            localVideo.muted = true;
         }
 
-        var endPoint = wsStart + loc.host + "/signaling/" + classId + "/" + userId + "/";
+        const videoTracks = localStream.getVideoTracks();
+        const audioTracks = localStream.getAudioTracks();
 
-        console.log("遷移先のURL : ", endPoint);
-        console.log(loc.pathname);
-
-        webSocket = new WebSocket(endPoint);
-
-        webSocket.addEventListener("open", (e) => {
-            console.log("WebSocketでの接続に成功しました");
-
-            sendSignal("new-peer", {});
-        });
-
-        webSocket.addEventListener("message", webSocketOnMessage);
-
-        webSocket.addEventListener("close", (e) => {
-            console.log("WebSocketでの接続が切断されました");
-        });
-
-        webSocket.addEventListener("error", (e) => {
-            console.log("エラーが発生しました");
-        });
-
-        localStream = new MediaStream();
-
-        const constraints = {
-            video : true,
-            audio : true
-        };
-
-        const localVideo = document.querySelector("#local-video");
-
-        // ビデオや音声のオンとオフを切り替えるためのボタン
-        const btnToggleVideo = document.querySelector("#btn-toggle-video");
-        const btnToggleAudio = document.querySelector("#btn-toggle-audio");
-
-        var userMedia = navigator.mediaDevices.getUserMedia(constraints)
-            .then(stream => {
-                localStream = stream;
-                localVideo.srcObject = localStream;
-                localVideo.muted = true;
-
-                var videoTracks = stream.getVideoTracks();
-                var audioTracks = stream.getAudioTracks();
-
-                videoTracks[0].enabled = true;
-                audioTracks[0].enabled = true;
-
-                btnToggleVideo.addEventListener("click", () => {
-                    videoTracks[0].enabled = !videoTracks[0].enabled;
-
-                    if(videoTracks[0].enabled){
-                        btnToggleVideo.innerHTML = '<i class="material-icons right">camera_alt</i>カメラをオフ';
-
-                        return;
-                    }
-
-                    btnToggleVideo.innerHTML = '<i class="material-icons right">camera_alt</i>カメラをオン';
-                });
-
-                btnToggleAudio.addEventListener("click", () => {
-                    audioTracks[0].enabled = !audioTracks[0].enabled;
-
-                    if(audioTracks[0].enabled){
-                        btnToggleAudio.innerHTML = '<i class="material-icons right">blur_on</i>ミュート';
-
-                        return;
-                    }
-
-                    btnToggleAudio.innerHTML = '<i class="material-icons right">blur_on</i>ミュート解除';
-                });
-            })
-            .catch(error => {
-                console.log("メディアデバイスへのアクセスに失敗しました", error);
+        if (btnToggleVideo && videoTracks.length > 0) {
+            btnToggleVideo.addEventListener("click", () => {
+                videoTracks[0].enabled = !videoTracks[0].enabled;
+                btnToggleVideo.innerHTML = videoTracks[0].enabled
+                    ? '<i class="material-icons right">camera_alt</i>カメラをオフ'
+                    : '<i class="material-icons right">camera_alt</i>カメラをオン';
             });
+        }
 
-        // btnSendMsg : メッセージの送信ボタン
-        // messageList : メッセージのリスト
-        // messageInput : メッセージの入力フォーム
-        var btnSendMsg = document.querySelector("#btn-send-msg");
-        messageList = document.querySelector("#message-list");
-        messageInput = document.querySelector("#msg");
+        if (btnToggleAudio && audioTracks.length > 0) {
+            btnToggleAudio.addEventListener("click", () => {
+                audioTracks[0].enabled = !audioTracks[0].enabled;
+                btnToggleAudio.innerHTML = audioTracks[0].enabled
+                    ? '<i class="material-icons right">blur_on</i>ミュート'
+                    : '<i class="material-icons right">blur_on</i>ミュート解除';
+            });
+        }
+    } catch (error) {
+        console.error("メディアデバイスへのアクセスに失敗しました", error);
+        return;
+    }
 
+    // メッセージ送信ボタンのイベント
+    const btnSendMsg = document.querySelector("#btn-send-msg");
+    if (btnSendMsg) {
         btnSendMsg.addEventListener("click", sendMsgOnClick);
-
-    }
-}
-
-function webSocketOnMessage(event){
-    var parsedData = JSON.parse(event.data);
-
-    var peerUsername = parsedData["peer"];
-    var action = parsedData["action"];
-
-    if(username == peerUsername){
-        return;
     }
 
-    var receiver_channel_name = parsedData["message"]["receiver_channel_name"];
+    // 2. カメラの準備が完了してから WebSocket 接続を開始する
+    const loc = window.location;
+    const wsStart = loc.protocol === "https:" ? "wss://" : "ws://";
+    const endPoint = `${wsStart}${loc.host}/signaling/${classId}/${userId}/`;
 
-    console.log(action);
+    console.log("WebSocket接続先 : ", endPoint);
+    webSocket = new WebSocket(endPoint);
 
-    if(action == "new-peer"){
-        createOfferer(peerUsername, receiver_channel_name);
-
-        return;
-    }
-
-    if(action == "new-offer"){
-        var offer = parsedData["message"]["sdp"];
-
-        createAnswerer(offer, peerUsername, receiver_channel_name);
-
-        return;
-    }
-
-    if(action == "new-answer"){
-        var answer = parsedData["message"]["sdp"];
-
-        var peer = mapPeers[peerUsername][0];
-
-        peer.setRemoteDescription(answer);
-
-        return;
-    }
-}
-
-function sendMsgOnClick(){
-    var firstName = document.getElementById("first-name").getAttribute("value");
-    var lastName = document.getElementById("last-name").getAttribute("value");
-    var message = messageInput.value;
-
-    var li = document.createElement("li");
-    li.style.listStyleType = "none";
-    li.appendChild(document.createTextNode(lastName + " " + firstName + " : " + message));
-    messageList.appendChild(li);
-
-    var dataChannels = getDataChannels();
-
-    message = lastName + " " + firstName + " : " + message;
-
-    for(index in dataChannels){
-        dataChannels[index].send(message);
-    }
-
-    messageInput.value = "";
-}
-
-function sendSignal(action, message){
-    var jsonStr = JSON.stringify({
-        "peer" : username,
-        "action" : action,
-        "message" : message
+    webSocket.addEventListener("open", () => {
+        console.log("WebSocketでの接続に成功しました");
+        // 接続成功を部屋メンバーに通知
+        sendSignal("new-peer", {});
     });
 
+    webSocket.addEventListener("message", webSocketOnMessage);
+    webSocket.addEventListener("close", () => console.log("WebSocketが切断されました"));
+    webSocket.addEventListener("error", (e) => console.error("WebSocketエラー", e));
+}
+
+function webSocketOnMessage(event) {
+    const parsedData = JSON.parse(event.data);
+    const peerUsername = parsedData["peer"];
+    const action = parsedData["action"];
+
+    // 自分の送信メッセージはスキップ
+    if (currentUsername === peerUsername) return;
+
+    const receiver_channel_name = parsedData["message"] ? parsedData["message"]["receiver_channel_name"] : null;
+
+    if (action === "new-peer") {
+        createOfferer(peerUsername, receiver_channel_name);
+        return;
+    }
+
+    if (action === "new-offer") {
+        const offer = parsedData["message"]["sdp"];
+        createAnswerer(offer, peerUsername, receiver_channel_name);
+        return;
+    }
+
+    if (action === "new-answer") {
+        const answer = parsedData["message"]["sdp"];
+        const peerObj = mapPeers[peerUsername];
+        if (peerObj) {
+            peerObj[0].setRemoteDescription(new RTCSessionDescription(answer));
+        }
+        return;
+    }
+
+    if (action === "candidate") {
+        const candidate = parsedData["message"]["candidate"];
+        const peerObj = mapPeers[peerUsername];
+        if (peerObj && candidate) {
+            peerObj[0].addIceCandidate(new RTCIceCandidate(candidate));
+        }
+        return;
+    }
+
+    // 相手が退室した場合の処理
+    if (action === "user-left") {
+        if (mapPeers[peerUsername]) {
+            const peer = mapPeers[peerUsername][0];
+            peer.close();
+            delete mapPeers[peerUsername];
+            const remoteVideo = document.getElementById(`${peerUsername}-video`);
+            if (remoteVideo) removeVideo(remoteVideo);
+        }
+    }
+}
+
+function sendSignal(action, message) {
+    if (!webSocket || webSocket.readyState !== WebSocket.OPEN) return;
+    const jsonStr = JSON.stringify({
+        "peer": currentUsername,
+        "action": action,
+        "message": message
+    });
     webSocket.send(jsonStr);
 }
 
-function createOfferer(peerUsername, receiver_channel_name){
-    var peer = new RTCPeerConnection(null);
+function createOfferer(peerUsername, receiver_channel_name) {
+    const peer = new RTCPeerConnection(rtcConfiguration);
     addLocalTracks(peer);
 
-    var dc = peer.createDataChannel("channel");
-    dc.addEventListener("open", () => {
-        console.log("WebRTCでの接続に成功しました");
-    });
-
+    const dc = peer.createDataChannel("channel");
+    dc.addEventListener("open", () => console.log("DataChannel接続完了"));
     dc.addEventListener("message", dcOnMessage);
 
-    var remoteVideo = createVideo(peerUsername);
+    const remoteVideo = createVideo(peerUsername);
     setOnTrack(peer, remoteVideo);
 
     mapPeers[peerUsername] = [peer, dc];
 
+    // ICE Candidate の個別送信
+    peer.addEventListener("icecandidate", (event) => {
+        if (event.candidate) {
+            sendSignal("candidate", {
+                "candidate": event.candidate,
+                "receiver_channel_name": receiver_channel_name
+            });
+        }
+    });
+
     peer.addEventListener("iceconnectionstatechange", () => {
-        var iceConnectionState = peer.iceConnectionState;
-
-        if(iceConnectionState === "failed" || iceConnectionState === "disconnected" || iceConnectionState === "closed"){
+        const state = peer.iceConnectionState;
+        if (state === "failed" || state === "disconnected" || state === "closed") {
             delete mapPeers[peerUsername];
-
-            if(iceConnectionState != "closed"){
-                peer.close();
-            }
-
+            if (state !== "closed") peer.close();
             removeVideo(remoteVideo);
         }
     });
 
-    peer.addEventListener("icecandidate", (event) => {
-        if(event.candidate){
-            console.log("New IceCandidate : ", JSON.stringify(peer.localDescription));
-
-            return;
-        }
-
-        sendSignal("new-offer", {
-            "sdp" : peer.localDescription,
-            "receiver_channel_name" : receiver_channel_name
-        });
-    });
-
+    // SDP Offer の生成と送信
     peer.createOffer()
-        .then(o => peer.setLocalDescription(o))
+        .then(offer => peer.setLocalDescription(offer))
         .then(() => {
-            console.log("Local descriptionのセットが完了しました")
-        });
+            console.log("Offerを送信します");
+            sendSignal("new-offer", {
+                "sdp": peer.localDescription,
+                "receiver_channel_name": receiver_channel_name
+            });
+        })
+        .catch(e => console.error("Offer作成エラー:", e));
 }
 
-function createAnswerer(offer, peerUsername, receiver_channel_name){
-    var peer = new RTCPeerConnection(null);
-
+function createAnswerer(offer, peerUsername, receiver_channel_name) {
+    const peer = new RTCPeerConnection(rtcConfiguration);
     addLocalTracks(peer);
 
-    var remoteVideo = createVideo(peerUsername);
+    const remoteVideo = createVideo(peerUsername);
     setOnTrack(peer, remoteVideo);
 
     peer.addEventListener("datachannel", e => {
         peer.dc = e.channel;
-        peer.dc.addEventListener("open", () => {
-
-        });
-
+        peer.dc.addEventListener("open", () => console.log("DataChannel(Answer側)接続完了"));
         peer.dc.addEventListener("message", dcOnMessage);
-
         mapPeers[peerUsername] = [peer, peer.dc];
     });
 
+    // ICE Candidate の個別送信
+    peer.addEventListener("icecandidate", (event) => {
+        if (event.candidate) {
+            sendSignal("candidate", {
+                "candidate": event.candidate,
+                "receiver_channel_name": receiver_channel_name
+            });
+        }
+    });
+
     peer.addEventListener("iceconnectionstatechange", () => {
-        var iceConnectionState = peer.iceConnectionState;
-
-        if(iceConnectionState === "failed" || iceConnectionState === "disconneted" || iceConnectionState === "closed"){
+        const state = peer.iceConnectionState;
+        if (state === "failed" || state === "disconnected" || state === "closed") {
             delete mapPeers[peerUsername];
-
-            if(iceConnectionState != "closed"){
-                peer.close();
-            }
-
+            if (state !== "closed") peer.close();
             removeVideo(remoteVideo);
         }
     });
 
-    peer.addEventListener("icecandidate", (event) => {
-        if(event.candidate){
-            console.log("New IceCandidate : ", JSON.stringify(peer.localDescription));
-
-            return;
-        }
-
-        sendSignal("new-answer", {
-            "sdp" : peer.localDescription,
-            "receiver_channel_name" : receiver_channel_name
-        });
-    });
-
-    peer.setRemoteDescription(offer)
-    .then(() => {
-        console.log("Remote descriptionのセットが完了しました。 ユーザー : %s", peerUsername);
-
-        return peer.createAnswer();
-    })
-    .then(a => {
-        console.log("アンサーが作成されました")
-
-        peer.setLocalDescription(a);
-    })
+    // Remote Description セット後に Answer を作成・送信
+    peer.setRemoteDescription(new RTCSessionDescription(offer))
+        .then(() => peer.createAnswer())
+        .then(answer => peer.setLocalDescription(answer))
+        .then(() => {
+            console.log("Answerを送信します");
+            sendSignal("new-answer", {
+                "sdp": peer.localDescription,
+                "receiver_channel_name": receiver_channel_name
+            });
+        })
+        .catch(e => console.error("Answer作成エラー:", e));
 }
 
-function addLocalTracks(peer){
+function addLocalTracks(peer) {
     localStream.getTracks().forEach(track => {
-        peer.addTrack(track, localStream)
+        peer.addTrack(track, localStream);
     });
-
-    return;
 }
 
-function dcOnMessage(event){
-    var message = event.data;
+function setOnTrack(peer, remoteVideo) {
+    const remoteStream = new MediaStream();
+    remoteVideo.srcObject = remoteStream;
 
-    var li = document.createElement("li");
+    peer.addEventListener("track", (event) => {
+        remoteStream.addTrack(event.track);
+    });
+}
+
+function sendMsgOnClick() {
+    const firstNameElem = document.getElementById("first-name");
+    const lastNameElem = document.getElementById("last-name");
+    const firstName = firstNameElem ? firstNameElem.getAttribute("value") : "";
+    const lastName = lastNameElem ? lastNameElem.getAttribute("value") : "";
+    
+    const messageInput = document.querySelector("#msg");
+    const messageList = document.querySelector("#message-list");
+    if (!messageInput || !messageList) return;
+
+    const message = messageInput.value;
+    if (!message.trim()) return;
+
+    const fullMsg = `${lastName} ${firstName} : ${message}`;
+
+    const li = document.createElement("li");
     li.style.listStyleType = "none";
-    li.appendChild(document.createTextNode(message));
+    li.appendChild(document.createTextNode(fullMsg));
+    messageList.appendChild(li);
+
+    const dataChannels = getDataChannels();
+    dataChannels.forEach(dc => {
+        if (dc && dc.readyState === "open") {
+            dc.send(fullMsg);
+        }
+    });
+
+    messageInput.value = "";
+}
+
+function dcOnMessage(event) {
+    const messageList = document.querySelector("#message-list");
+    if (!messageList) return;
+    const li = document.createElement("li");
+    li.style.listStyleType = "none";
+    li.appendChild(document.createTextNode(event.data));
     messageList.appendChild(li);
 }
 
-function createVideo(peerUsername){
-    var videoContainer = document.querySelector("#video-container");
+function createVideo(peerUsername) {
+    const videoContainer = document.querySelector("#video-container");
+    const remoteVideo = document.createElement("video");
 
-    var remoteVideo = document.createElement("video");
-
-    remoteVideo.id = peerUsername + "-video";
+    remoteVideo.id = `${peerUsername}-video`;
     remoteVideo.autoplay = true;
     remoteVideo.playsInline = true;
 
-    var videoWrapper = document.createElement("div");
+    const videoWrapper = document.createElement("div");
     videoWrapper.setAttribute("class", "section");
 
-    videoContainer.appendChild(videoWrapper);
-    videoWrapper.appendChild(remoteVideo);
+    if (videoContainer) {
+        videoContainer.appendChild(videoWrapper);
+        videoWrapper.appendChild(remoteVideo);
+    }
 
     return remoteVideo;
 }
 
-function setOnTrack(peer, remoteVideo){
-    var remoteStream = new MediaStream()
-
-    remoteVideo.srcObject = remoteStream;
-
-    peer.addEventListener("track", async (event) => {
-        remoteStream.addTrack(event.track, remoteStream)
-    });
-}
-
-function removeVideo(video){
-    var videoWrapper = video.parentNode;
-
-    videoWrapper.parentNode.removeChild(videoWrapper);
-}
-
-function getDataChannels(){
-    var dataChannels = [];
-
-    for(peerUsername in mapPeers){
-        var dataChannel = mapPeers[peerUsername][1];
-
-        dataChannels.push(dataChannel);
+function removeVideo(video) {
+    const videoWrapper = video.parentNode;
+    if (videoWrapper && videoWrapper.parentNode) {
+        videoWrapper.parentNode.removeChild(videoWrapper);
     }
+}
 
+function getDataChannels() {
+    const dataChannels = [];
+    for (let peerUsername in mapPeers) {
+        if (mapPeers[peerUsername][1]) {
+            dataChannels.push(mapPeers[peerUsername][1]);
+        }
+    }
     return dataChannels;
-}  
+}
