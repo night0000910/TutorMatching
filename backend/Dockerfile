@@ -19,4 +19,4 @@ RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 
 # 本番用WSGI/ASGIサーバー（GunicornまたはDaphne）で起動
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000"]
+CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "tutoring.asgi:application"]
