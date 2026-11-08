@@ -241,10 +241,10 @@ def serialize_class_list(class_list):
         student_id = specific_class.pop("student") # student_idは、生徒のStudentModelにおけるid
         teacher_id = specific_class.pop("teacher") # teacher_idは、講師のTeacherModelにおけるid
 
-        student = tutoringapp.models.StudentModel.objects.get(id=student_id)
+        student = backend.tutoringapp.models.StudentModel.objects.get(id=student_id)
         student = student.user
         student_id = student.id # student_idをUserModelにおけるidに更新
-        teacher = tutoringapp.models.TeacherModel.objects.get(id=teacher_id)
+        teacher = backend.tutoringapp.models.TeacherModel.objects.get(id=teacher_id)
         teacher = teacher.user
         teacher_id = teacher.id # teacher_idをUserModelにおけるidに更新
 
@@ -386,12 +386,12 @@ class GetCurrentClassView(views.APIView):
         now = timezone.now().replace(minute=0, second=0, microsecond=0) # UTCにおける現在時刻(ただし、分、秒、マイクロ秒は0)
 
         if user.user_type == "student":
-            student = tutoringapp.models.StudentModel.objects.get(user=user.id)
-            current_class = tutoringapp.models.ClassModel.objects.filter(student=student.id).filter(datetime=now)
+            student = backend.tutoringapp.models.StudentModel.objects.get(user=user.id)
+            current_class = backend.tutoringapp.models.ClassModel.objects.filter(student=student.id).filter(datetime=now)
 
         elif user.user_type == "teacher":
-            teacher = tutoringapp.models.TeacherModel.objects.get(user=user.id)
-            current_class = tutoringapp.models.ClassModel.objects.filter(teacher=teacher.id).filter(datetime=now)
+            teacher = backend.tutoringapp.models.TeacherModel.objects.get(user=user.id)
+            current_class = backend.tutoringapp.models.ClassModel.objects.filter(teacher=teacher.id).filter(datetime=now)
 
         serializer = serializers.ClassSerializer(instance=current_class, many=True)
 
@@ -409,11 +409,11 @@ class GetTeachersView(views.APIView):
 
     def get(self, request, *args, **kwargs):
 
-        teachers_set = tutoringapp.models.TeacherModel.objects.all()
+        teachers_set = backend.tutoringapp.models.TeacherModel.objects.all()
         teachers_list = []
 
         for teacher in teachers_set:
-            teachers_class_set = tutoringapp.models.ClassModel.objects.filter(teacher=teacher.id)
+            teachers_class_set = backend.tutoringapp.models.ClassModel.objects.filter(teacher=teacher.id)
 
             for teachers_class in teachers_class_set:
 
@@ -436,9 +436,9 @@ class GetDailyStudentsReservedClassView(views.APIView):
     def get(self, request, *args, **kwargs):
 
         user = request.user
-        student = tutoringapp.models.StudentModel.objects.get(user=user.id)
+        student = backend.tutoringapp.models.StudentModel.objects.get(user=user.id)
 
-        reserved_class_set = tutoringapp.models.ClassModel.objects.filter(student=student.id) # 特定の生徒が予約した授業のセット
+        reserved_class_set = backend.tutoringapp.models.ClassModel.objects.filter(student=student.id) # 特定の生徒が予約した授業のセット
         reserved_class_list = change_set_to_list(reserved_class_set)
         daily_reserved_class_list = get_daily_class_list(reserved_class_list, 0, 0)
 
@@ -453,9 +453,9 @@ class GetWeeklyStudentsReservedClassView(views.APIView):
 
     def get(self, request, *args, **kwargs):
         user = request.user
-        student = tutoringapp.models.StudentModel.objects.get(user=user.id)
+        student = backend.tutoringapp.models.StudentModel.objects.get(user=user.id)
 
-        reserved_class_set = tutoringapp.models.ClassModel.objects.filter(student=student.id)
+        reserved_class_set = backend.tutoringapp.models.ClassModel.objects.filter(student=student.id)
         reserved_class_list = change_set_to_list(reserved_class_set)
         weekly_reserved_class_list = []
 
@@ -484,10 +484,10 @@ class GetWeeklySpecificReservedClassView(views.APIView):
         teacher_id = request.query_params.get("teacher_id")
         student_id = request.query_params.get("student_id")
 
-        teacher = tutoringapp.models.TeacherModel.objects.get(user=teacher_id)
-        student = tutoringapp.models.StudentModel.objects.get(user=student_id)
+        teacher = backend.tutoringapp.models.TeacherModel.objects.get(user=teacher_id)
+        student = backend.tutoringapp.models.StudentModel.objects.get(user=student_id)
 
-        reserved_class_set = tutoringapp.models.ClassModel.objects.filter(teacher=teacher.id).filter(student=student.id) # 講師の授業のうち、特定の生徒が予約した授業のセット
+        reserved_class_set = backend.tutoringapp.models.ClassModel.objects.filter(teacher=teacher.id).filter(student=student.id) # 講師の授業のうち、特定の生徒が予約した授業のセット
         reserved_class_list = change_set_to_list(reserved_class_set)
         weekly_reserved_class_list = []
 
@@ -514,7 +514,7 @@ class GetTeachersClassView(views.APIView):
     def get(self, request, *args, **kwargs):
 
         teacher_id = request.query_params.get("teacher_id") # 講師のUserModelにおけるid
-        teacher = tutoringapp.models.TeacherModel.objects.get(user=teacher_id)
+        teacher = backend.tutoringapp.models.TeacherModel.objects.get(user=teacher_id)
 
         year = int(request.query_params.get("year")) # JSTとして日時を取得する
         month = int(request.query_params.get("month"))
@@ -524,7 +524,7 @@ class GetTeachersClassView(views.APIView):
         year, month, day, hour = change_jst_to_utc(year, month, day, hour)
         time = datetime.datetime(year, month, day, hour, tzinfo=datetime.timezone.utc)
 
-        teachers_class = tutoringapp.models.ClassModel.objects.filter(teacher=teacher.id).get(datetime=time)
+        teachers_class = backend.tutoringapp.models.ClassModel.objects.filter(teacher=teacher.id).get(datetime=time)
         serializer = serializers.ClassSerializer(instance=teachers_class)
 
         return Response(serializer.data, status.HTTP_200_OK)
@@ -537,9 +537,9 @@ class AddReservedClassView(views.APIView):
     def patch(self, request, class_id, *args, **kwargs):
 
         user = request.user
-        student = tutoringapp.models.StudentModel.objects.get(user=user.id)
+        student = backend.tutoringapp.models.StudentModel.objects.get(user=user.id)
 
-        teachers_class = get_object_or_404(tutoringapp.models.ClassModel, id=class_id)
+        teachers_class = get_object_or_404(backend.tutoringapp.models.ClassModel, id=class_id)
         serializer = serializers.ClassSerializer(instance=teachers_class, data={"student" : student.id}, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -557,9 +557,9 @@ class GetDailyTeachersReservedClassView(views.APIView):
 
     def get(self, request, *args, **kwargs):
         user = request.user
-        teacher = tutoringapp.models.TeacherModel.objects.get(user=user.id)
+        teacher = backend.tutoringapp.models.TeacherModel.objects.get(user=user.id)
 
-        teachers_class_set = tutoringapp.models.ClassModel.objects.filter(teacher=teacher.id).exclude(student=1)
+        teachers_class_set = backend.tutoringapp.models.ClassModel.objects.filter(teacher=teacher.id).exclude(student=1)
         teachers_class_list = change_set_to_list(teachers_class_set)
         daily_teachers_class_list = get_daily_class_list(teachers_class_list, 0, 0)
         
@@ -574,9 +574,9 @@ class GetWeeklyTeachersReservedClassView(views.APIView):
 
     def get(self, request, *args, **kwargs):
         user = request.user
-        teacher = tutoringapp.models.TeacherModel.objects.get(user=user.id)
+        teacher = backend.tutoringapp.models.TeacherModel.objects.get(user=user.id)
 
-        teachers_class_set = tutoringapp.models.ClassModel.objects.filter(teacher=teacher.id).exclude(student=1)
+        teachers_class_set = backend.tutoringapp.models.ClassModel.objects.filter(teacher=teacher.id).exclude(student=1)
         teachers_class_list = change_set_to_list(teachers_class_set)
         weekly_teachers_class_list = []
 
@@ -603,9 +603,9 @@ class GetWeeklyTeachersClassView(views.APIView):
     # teacher_id : 講師のUserModelにおけるid, student_id : 生徒のUserModelにおけるid
     def get(self, request, teacher_id, *args, **kwargs):
 
-        teacher = tutoringapp.models.TeacherModel.objects.get(user=teacher_id)
+        teacher = backend.tutoringapp.models.TeacherModel.objects.get(user=teacher_id)
         
-        teachers_class_set = tutoringapp.models.ClassModel.objects.filter(teacher=teacher.id) # 講師が登録した全ての授業のセット
+        teachers_class_set = backend.tutoringapp.models.ClassModel.objects.filter(teacher=teacher.id) # 講師が登録した全ての授業のセット
         teachers_class_list = change_set_to_list(teachers_class_set)
         weekly_teachers_class_list = []
 
@@ -631,7 +631,7 @@ class AddTeachersClassView(views.APIView):
     def post(self, request, *args, **kwargs):
 
         user = request.user
-        teacher = tutoringapp.models.TeacherModel.objects.get(user=user.id)
+        teacher = backend.tutoringapp.models.TeacherModel.objects.get(user=user.id)
         year = int(request.data.get("year")) # JSTとして日時を取得する
         month = int(request.data.get("month"))
         day = int(request.data.get("day"))

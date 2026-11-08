@@ -1,7 +1,7 @@
 from django.shortcuts import render
 from django.shortcuts import render, redirect
 
-import tutoringapp
+import tutoringapp 
 
 
 # -------------------------講師・生徒共通のページ-------------------------

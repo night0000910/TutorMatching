@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # 1. データベースコンテナ
+  # 1. データベースコンテナ（backend-net のみ）
   db:
     image: postgres:15-alpine
     restart: always
@@ -11,13 +11,15 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_password}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend-net # ◄ DBはバックエンドネットワークのみ
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  # 2. Djangoアプリコンテナ
+  # 2. Djangoアプリコンテナ（両方のネットワークに参加）
   app:
     build:
       context: ./backend
@@ -28,11 +30,14 @@ services:
     volumes:
       - static_volume:/app/staticfiles
       - media_volume:/app/media
+    networks:
+      - frontend-net # ◄ Nginxからの通信用
+      - backend-net  # ◄ DBへの通信用
     depends_on:
       db:
         condition: service_healthy
 
-  # 3. Nginxコンテナ（最前線）
+  # 3. Nginxコンテナ（frontend-net のみ）
   web:
     image: nginx:alpine
     restart: always
@@ -43,14 +48,24 @@ services:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
       - static_volume:/app/staticfiles
       - media_volume:/app/media
-      - certbot_etc:/etc/letsencrypt 
-      - certbot_var:/var/www/certbot 
+      - certbot_etc:/etc/letsencrypt
+      - certbot_var:/var/www/certbot
+    networks:
+      - frontend-net # ◄ フロントエンドネットワークのみ
     depends_on:
       - app
 
+# データ永続化・共有ボリューム
 volumes:
-  postgres_data: # DBデータの永続化用
-  static_volume: # 静的ファイル共有用
-  media_volume:  # ユーザー画像共有用
-  certbot_etc: # 証明書データ格納用
-  certbot_var: # 発行時検証用
+  postgres_data:
+  static_volume:
+  media_volume:
+  certbot_etc:
+  certbot_var:
+
+# ネットワークの定義（新規追加）
+networks:
+  frontend-net:
+    driver: bridge
+  backend-net:
+    driver: bridge
