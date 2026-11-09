@@ -6,25 +6,19 @@ def create_dummy_student(apps, schema_editor):
     StudentModel = apps.get_model('tutoringapp', 'StudentModel')
     
     # UserModelのID: 1 を作成
-    if not UserModel.objects.filter(id=1).exists():
-        user = UserModel.objects.create(
-            id=1,
-            username='dummy_student',
-            password=make_password(None),  # ログイン不可能なパスワードを設定
-            is_active=False,
-            first_name='student',
-            last_name='dummy',
-            user_type='student'
-        )
-    else:
-        user = UserModel.objects.get(id=1)
+    user, created = UserModel.objects.get_or_create(
+        username='dummy_student',
+        defaults={
+            'password': make_password(None),
+            'is_active': False,
+            'first_name': 'student',
+            'last_name': 'dummy',
+            'user_type': 'student'
+        }
+    )
 
     # StudentModelのID: 1 を作成
-    if not StudentModel.objects.filter(user=user).exists():
-        StudentModel.objects.create(
-            id=1,
-            user=user
-        )
+    StudentModel.objects.get_or_create(user=user)
 
 def reverse_dummy_student(apps, schema_editor):
     # ロールバック用の処理
